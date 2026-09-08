@@ -4,6 +4,16 @@
 
 A small macOS menu bar app that disconnects the built-in display while keeping the MacBook lid open. Use external displays while retaining access to the built-in microphone. Written in Swift with no third-party dependencies.
 
+## 解决什么问题？
+
+这个项目源于一个实际的桌面办公需求：MacBook 连接两台外接显示器后，希望只使用这两块屏幕，同时继续使用笔记本自带的麦克风进行通话或语音输入。
+
+合上笔记本盖子可以让桌面只保留外接显示器，但在这台 MacBook 上，合盖后内置麦克风也无法使用。保持开盖则能使用麦克风，却又多出一块不需要的内屏，鼠标和窗口仍可能进入这块屏幕。单纯把内屏亮度调到最低，也不能让它退出桌面布局。
+
+LidlessDisplay 提供一个手动开关：**保持笔记本开盖，让内屏退出桌面布局，画面只输出到外接显示器。** 这样就能保留使用内置麦克风的条件，无需为了关闭内屏而合盖。
+
+它适合使用一台或多台外接显示器、又希望继续使用笔记本内置麦克风的用户。工具只控制显示器，不接管麦克风；请在系统或通话应用中选择内置麦克风，并确认实际收音正常。
+
 ## 功能
 
 - 手动断开或恢复内屏，支持多个外接显示器。

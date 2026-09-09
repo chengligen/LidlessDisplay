@@ -117,34 +117,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         let internalOn = (try? displays.internalID()).map { CGDisplayIsActive($0) != 0 } ?? false
         let count = (try? displays.externals().count) ?? 0
-        menu.addItem(withTitle: "开盖外屏 · 外接屏 \(count) 台", action: nil, keyEquivalent: "")
-        menu.addItem(withTitle: displays.lidClosed() == true ? "笔记本当前已合盖" : (internalOn ? "内屏：已启用" : "内屏：已断开"), action: nil, keyEquivalent: "")
+        let state = displays.lidClosed() == true ? "已合盖" : (internalOn ? "内屏开启" : "内屏关闭")
+        menu.addItem(withTitle: "外接屏 \(count) 台 · \(state)", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
-        add("仅用外接显示器", #selector(disable), enabled: internalOn && count > 0 && displays.lidClosed() == false)
+        if internalOn {
+            add("仅用外接显示器", #selector(disable), enabled: count > 0 && displays.lidClosed() == false)
+        } else {
+            add("恢复内屏", #selector(restore))
+        }
         if let pendingUntil {
             add("保留设置（\(max(0, Int(pendingUntil.timeIntervalSinceNow))) 秒后自动恢复）", #selector(confirm))
         }
-        add("恢复内屏", #selector(restore))
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "P2710V · 144Hz 临时覆盖", action: nil, keyEquivalent: "")
-        add("检查覆盖状态…", #selector(checkEDID))
         add("应用 144Hz 覆盖…", #selector(applyEDID))
-        add("取消覆盖，恢复原厂…", #selector(resetEDID))
-        menu.addItem(withTitle: edidProcess == nil ? "应用或取消前：内屏亮起，仅连接目标外屏" : "正在处理，请保持连接…", action: nil, keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "保持开盖，内置麦克风可继续使用", action: nil, keyEquivalent: "")
-        add("打开声音设置…", #selector(soundSettings))
+        let more = NSMenu()
+        add("检查覆盖状态…", #selector(checkEDID), to: more)
+        add("取消覆盖，恢复原厂…", #selector(resetEDID), to: more)
+        more.addItem(.separator())
+        add("打开声音设置…", #selector(soundSettings), to: more)
+        let moreItem = NSMenuItem(title: "更多", action: nil, keyEquivalent: "")
+        moreItem.submenu = more
+        menu.addItem(moreItem)
+        if edidProcess != nil { menu.addItem(withTitle: "正在处理，请保持连接…", action: nil, keyEquivalent: "") }
         if let lastError { menu.addItem(withTitle: lastError, action: nil, keyEquivalent: "") }
         menu.addItem(.separator())
         add("恢复内屏并退出", #selector(quit))
     }
 
-    func add(_ title: String, _ action: Selector, enabled: Bool = true) {
+    func add(_ title: String, _ action: Selector, enabled: Bool = true, to submenu: NSMenu? = nil) {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
         entry.target = self
         entry.isEnabled = enabled && edidProcess == nil
-        item.menu?.autoenablesItems = false
-        item.menu?.addItem(entry)
+        let menu = submenu ?? item.menu
+        menu?.autoenablesItems = false
+        menu?.addItem(entry)
     }
 
     @objc func disable() {

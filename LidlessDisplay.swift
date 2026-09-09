@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var pendingUntil: Date?
     var switchStarted: Date?
     var lastError: String?
+    var edidProcess: Process?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -125,6 +126,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         add("恢复内屏", #selector(restore))
         menu.addItem(.separator())
+        menu.addItem(withTitle: "P2710V · 144Hz 临时覆盖", action: nil, keyEquivalent: "")
+        add("检查覆盖状态…", #selector(checkEDID))
+        add("应用 144Hz 覆盖…", #selector(applyEDID))
+        add("取消覆盖，恢复原厂…", #selector(resetEDID))
+        menu.addItem(withTitle: edidProcess == nil ? "应用或取消前：内屏亮起，仅连接目标外屏" : "正在处理，请保持连接…", action: nil, keyEquivalent: "")
+        menu.addItem(.separator())
         menu.addItem(withTitle: "保持开盖，内置麦克风可继续使用", action: nil, keyEquivalent: "")
         add("打开声音设置…", #selector(soundSettings))
         if let lastError { menu.addItem(withTitle: lastError, action: nil, keyEquivalent: "") }
@@ -135,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func add(_ title: String, _ action: Selector, enabled: Bool = true) {
         let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
         entry.target = self
-        entry.isEnabled = enabled
+        entry.isEnabled = enabled && edidProcess == nil
         item.menu?.autoenablesItems = false
         item.menu?.addItem(entry)
     }
@@ -192,9 +199,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension")!)
     }
 
+    @objc func checkEDID() { runEDID("check") }
+    @objc func applyEDID() { runEDID("apply") }
+    @objc func resetEDID() { runEDID("reset") }
+
+    func runEDID(_ command: String) {
+        guard edidProcess == nil else { return }
+        guard pendingUntil == nil else {
+            showError(DisplayFailure.message("请先完成内屏切换确认或恢复内屏，再操作 EDID。"))
+            return
+        }
+        let resources = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/EDID")
+        let original = resources.appendingPathComponent("P2710V_EDID_original.bin")
+        let modified = resources.appendingPathComponent("P2710V_EDID_max144.bin")
+        guard FileManager.default.fileExists(atPath: original.path), FileManager.default.fileExists(atPath: modified.path) else {
+            showError(DisplayFailure.message("此应用未附带已验证的 P2710V EDID 文件。请按照 README 配置本机文件后重新构建。"))
+            return
+        }
+        let process = Process()
+        process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/EDIDOverride")
+        process.arguments = [command, original.path, modified.path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        process.terminationHandler = { [weak self] task in
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.edidProcess = nil
+                self.refresh()
+                let alert = NSAlert()
+                alert.messageText = task.terminationStatus == 0 ? "EDID 检查与操作结果" : "EDID 操作未完成"
+                alert.informativeText = output.isEmpty ? "未收到有效结果，请保持内屏开启并检查显示器连接。" : output
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+        do {
+            try process.run()
+            edidProcess = process
+        } catch { showError(error) }
+        refresh()
+    }
+
     @objc func quit() { NSApp.terminate(nil) }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if edidProcess != nil { return .terminateCancel }
         guard managed else { return .terminateNow }
         do { try displays.setInternal(true); return .terminateNow }
         catch { showError(error); return .terminateCancel }

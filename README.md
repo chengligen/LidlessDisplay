@@ -1,8 +1,10 @@
 # 开盖外屏 · LidlessDisplay
 
+[简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md)
+
 一个本地 macOS 菜单栏小工具：保持 MacBook 开盖，将内屏从桌面布局中断开，只使用外接显示器。不开启录音、不更改音频输入设备。
 
-A small macOS menu bar app that disconnects the built-in display while keeping the MacBook lid open. Use external displays while retaining access to the built-in microphone. Written in Swift with no third-party dependencies.
+使用 Swift 编写，无第三方依赖。以下语言选项仅切换文档，应用界面目前为简体中文。
 
 ## 解决什么问题？
 

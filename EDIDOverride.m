@@ -38,8 +38,8 @@ static NSData *readEDID(Read read, AV av) {
 }
 
 int main(int argc, char **argv) { @autoreleasepool {
-    if (argc != 4 || (strcmp(argv[1], "check") && strcmp(argv[1], "apply") && strcmp(argv[1], "reset"))) {
-        fprintf(stderr, "Usage: EDIDOverride check|apply|reset original.bin max144.bin\n"); return 2;
+    if (argc != 4 || (strcmp(argv[1], "check") && strcmp(argv[1], "apply") && strcmp(argv[1], "auto") && strcmp(argv[1], "reset"))) {
+        fprintf(stderr, "Usage: EDIDOverride check|apply|auto|reset original.bin max144.bin\n"); return 2;
     }
     NSData *original = [NSData dataWithContentsOfFile:@(argv[2])];
     NSData *modified = [NSData dataWithContentsOfFile:@(argv[3])];
@@ -48,15 +48,19 @@ int main(int argc, char **argv) { @autoreleasepool {
         fprintf(stderr, "EDID 文件缺失或与已验证版本不一致，未执行操作。\n"); return 2;
     }
     BOOL check = !strcmp(argv[1], "check"), reset = !strcmp(argv[1], "reset");
+    BOOL automatic = !strcmp(argv[1], "auto");
     if (!check) {
-        CGDirectDisplayID displays[128]; uint32_t count = 0; unsigned internal = 0, external = 0;
+        CGDirectDisplayID displays[128]; uint32_t count = 0; unsigned internal = 0, external = 0, active = 0;
         if (CGGetOnlineDisplayList(128, displays, &count)) return 2;
         for (unsigned i = 0; i < count; i++) {
+            if (CGDisplayIsActive(displays[i])) active++;
             if (CGDisplayIsBuiltin(displays[i]) && CGDisplayIsActive(displays[i])) internal++;
             else if (!CGDisplayIsBuiltin(displays[i])) external++;
         }
-        if (!internal || external != 1) {
-            fprintf(stderr, "请先保持内屏亮起，并只连接之前修改过的那台 P2710V，再重试。\n"); return 2;
+        // Automatic recovery may run with both externals attached or the lid closed.
+        // It still requires a usable screen and exactly one byte-matched target below.
+        if (automatic ? active == 0 : (!internal || external != 1)) {
+            fprintf(stderr, "%s\n", automatic ? "显示器尚未就绪，稍后重试。" : "请先保持内屏亮起，并只连接之前修改过的那台 P2710V，再重试。"); return 2;
         }
     }
     void *lib = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
@@ -119,6 +123,6 @@ int main(int argc, char **argv) { @autoreleasepool {
                 restored && !rollback ? "已核验恢复操作前状态" : "未能确认回滚成功，可重新连接外屏后检查", rollback);
         CFRelease(target); return 1;
     }
-    puts(reset ? "已取消临时覆盖，读回数据与原厂备份完全一致。" : "144Hz 临时覆盖已生效，读回数据与修改版完全一致。现在可以接回第二台显示器。");
+    puts(reset ? "已取消临时覆盖，读回数据与原厂备份完全一致。" : "144Hz 临时覆盖已生效，读回数据与修改版完全一致。");
     CFRelease(target); return 0;
 } }

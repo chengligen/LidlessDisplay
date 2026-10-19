@@ -96,6 +96,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var switchStarted: Date?
     var lastError: String?
     var edidProcess: Process?
+    var nextEDIDCheck = Date().addingTimeInterval(3)
+    var screensSleeping = false
+    var autoEDIDFailed = false
+
+    var autoEDIDEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "autoEDIDRecovery") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "autoEDIDRecovery") }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -105,7 +113,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         item.menu = menu
         refresh()
-        let recoveryTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.checkRecovery() }
+        let notifications = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
+            notifications.addObserver(self, selector: #selector(displaysSleeping), name: name, object: nil)
+        }
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+            notifications.addObserver(self, selector: #selector(displaysAwake), name: name, object: nil)
+        }
+        let recoveryTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            self?.checkRecovery()
+            self?.checkAutomaticEDID()
+        }
         RunLoop.main.add(recoveryTimer, forMode: .common)
         timer = recoveryTimer
     }
@@ -130,6 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         add("应用 144Hz 覆盖…", #selector(applyEDID))
         let more = NSMenu()
+        add("自动恢复 144Hz", #selector(toggleAutomaticEDID), to: more)
+        more.items.last?.state = autoEDIDEnabled ? .on : .off
         add("检查覆盖状态…", #selector(checkEDID), to: more)
         add("取消覆盖，恢复原厂…", #selector(resetEDID), to: more)
         more.addItem(.separator())
@@ -206,9 +226,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func checkEDID() { runEDID("check") }
     @objc func applyEDID() { runEDID("apply") }
-    @objc func resetEDID() { runEDID("reset") }
+    @objc func resetEDID() {
+        autoEDIDEnabled = false
+        runEDID("reset")
+    }
+
+    @objc func toggleAutomaticEDID() {
+        autoEDIDEnabled.toggle()
+        autoEDIDFailed = false
+        nextEDIDCheck = Date().addingTimeInterval(3)
+        refresh()
+    }
+
+    @objc func displaysSleeping() { screensSleeping = true }
+
+    @objc func displaysAwake() {
+        screensSleeping = false
+        autoEDIDFailed = false
+        nextEDIDCheck = Date().addingTimeInterval(3)
+    }
+
+    func checkAutomaticEDID() {
+        guard autoEDIDEnabled, !screensSleeping, !autoEDIDFailed,
+              edidProcess == nil, pendingUntil == nil, Date() >= nextEDIDCheck else { return }
+        nextEDIDCheck = Date().addingTimeInterval(15)
+        runEDID("auto")
+    }
 
     func runEDID(_ command: String) {
+        let automatic = command == "auto"
         guard edidProcess == nil else { return }
         guard pendingUntil == nil else {
             showError(DisplayFailure.message("请先完成内屏切换确认或恢复内屏，再操作 EDID。"))
@@ -218,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let original = resources.appendingPathComponent("P2710V_EDID_original.bin")
         let modified = resources.appendingPathComponent("P2710V_EDID_max144.bin")
         guard FileManager.default.fileExists(atPath: original.path), FileManager.default.fileExists(atPath: modified.path) else {
-            showError(DisplayFailure.message("此应用未附带已验证的 P2710V EDID 文件。请按照 README 配置本机文件后重新构建。"))
+            if !automatic { showError(DisplayFailure.message("此应用未附带已验证的 P2710V EDID 文件。请按照 README 配置本机文件后重新构建。")) }
             return
         }
         let process = Process()
@@ -232,6 +278,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.edidProcess = nil
+                if automatic {
+                    // A write/verification failure gets no repeated writes this wake cycle.
+                    // Missing or ambiguous targets (exit 2) are read-only and may be retried.
+                    if task.terminationStatus != 0 && task.terminationStatus != 2 {
+                        self.autoEDIDFailed = true
+                        self.lastError = "144Hz 自动恢复未完成，请检查覆盖状态"
+                    }
+                    self.refresh()
+                    return
+                }
+                if command == "apply", task.terminationStatus == 0 {
+                    self.autoEDIDEnabled = true
+                    self.autoEDIDFailed = false
+                }
                 self.refresh()
                 let alert = NSAlert()
                 alert.messageText = task.terminationStatus == 0 ? "EDID 检查与操作结果" : "EDID 操作未完成"
@@ -243,7 +303,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             try process.run()
             edidProcess = process
-        } catch { showError(error) }
+        } catch {
+            if automatic {
+                autoEDIDFailed = true
+                lastError = "144Hz 自动恢复未能启动"
+            } else { showError(error) }
+        }
         refresh()
     }
 

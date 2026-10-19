@@ -23,15 +23,15 @@ It is intended for users with one or more external monitors who want to keep usi
 - Confirm the display change within 20 seconds, or the app attempts to restore the built-in display.
 - Attempt to restore the built-in display when all external monitors disconnect; restore a display disabled by this app when quitting normally.
 - Launching the app does not automatically disable the built-in display or change audio input devices.
-- The built-in display switch changes only the current login session's display configuration. EDID override is a separate manual operation.
+- The built-in display switch changes only the current login session's display configuration. The 144Hz EDID override supports automatic recovery.
 
 ## P2710V dual-monitor detection workaround
 
 In the tested M4 Pro setup with two P2710V monitors, macOS sometimes detected only one external monitor. Applying a temporary EDID capped at 144Hz to one monitor restored dual-monitor operation. The underlying cause remains unconfirmed, and the override has been lost before, so the app provides a manual reapply action.
 
-The main menu contains the built-in display switch, Apply 144Hz override (`应用 144Hz 覆盖…`), and Quit. The display switch shows either Use external displays only (`仅用外接显示器`) or Restore built-in display (`恢复内屏`). Check override status (`检查覆盖状态…`), Cancel override and restore factory EDID (`取消覆盖，恢复原厂…`), and sound settings are under More (`更多`). **Launching the app neither applies the override nor disables the built-in display automatically.** Quitting does not cancel the EDID override, to avoid disrupting a working dual-monitor connection.
+The main menu contains the built-in display switch, Apply 144Hz override (`应用 144Hz 覆盖…`), and Quit. The display switch shows either Use external displays only (`仅用外接显示器`) or Restore built-in display (`恢复内屏`). Check override status (`检查覆盖状态…`), Cancel override and restore factory EDID (`取消覆盖，恢复原厂…`), and sound settings are under More (`更多`). **Launching the app does not disable the built-in display automatically.** Automatic 144Hz recovery (`更多 → 自动恢复 144Hz`) is enabled by default. It checks about 3 seconds after launch or screen wake, then every 15 seconds. It skips an existing override and reapplies a lost override only to one fully byte-matched target, including with two external monitors connected and the built-in display off. Checks pause during sleep. Write/verification failures suspend retries until the next wake or manual re-enabling; missing or ambiguous targets are skipped and checked later. Automatic checks do not open dialogs. Canceling the override disables automatic recovery; successfully applying it manually enables recovery again. Quitting does not cancel the EDID override, to avoid disrupting a working dual-monitor connection.
 
-To apply or cancel the override:
+To manually apply or cancel the override (automatic recovery does not require this single-monitor setup):
 
 1. Keep the MacBook lid open and the built-in display active. If the app disconnected it, select Restore built-in display first.
 2. Connect only the target P2710V whose EDID was previously validated and backed up. Disconnect the other external monitor's video cable.
@@ -86,7 +86,7 @@ The app does not register itself as a login item. You can optionally add it to m
 
 ## Limitations and recovery
 
-- Uses private SkyLight / IOKit APIs that may stop working after macOS updates. The built-in display switch changes the session configuration; manual EDID override changes the modes reported to macOS without writing to monitor hardware.
+- Uses private SkyLight / IOKit APIs that may stop working after macOS updates. The built-in display switch changes the session configuration; EDID override changes the modes reported to macOS without writing to monitor hardware.
 - Sleep or reconnection may restore the built-in display. Switch it off manually again if needed.
 - Automatic recovery depends on the app continuing to run; force-quitting or crashes do not guarantee restoration. Reopen the app and select Restore built-in display, or run `--restore`. Disconnecting external monitors and closing/reopening the lid may also prompt system detection.
 - Display changes may cause brief black screens, window rearrangement, or a change of primary display.
@@ -94,6 +94,8 @@ The app does not register itself as a login item. You can optionally add it to m
 Display API references: [ScreenTune](https://github.com/antonorlov/screen_tune), [displaytoggle](https://github.com/calvincchan/displaytoggle).
 
 EDID API reference: [mac-edid-override](https://github.com/kdotc2/mac-edid-override). Version 1.1 has passed build and signature verification, current override readback, and rejection checks for damaged/mismatched files and two connected external monitors. End-to-end testing of apply/cancel and failure rollback in the new app still requires a single target monitor setup; applying the override with the earlier standalone helper succeeded.
+
+Version 1.2 recovery was tested on M4 Pro / macOS 27.0.1 on 2026-10-19: after deliberately clearing the target override, the running app restored it in about 2 seconds, verified readback, and kept both external displays active. The original built-in-display-off state was then restored. Scheduling tests with a fake helper cover startup, sleep/wake delay, serialization, cooldown, failure suspension, and the toggle (`python3 tests/test_automatic_edid.py`, requires a macOS graphical session). Long-term behavior after real display power-off, sleep, and cable reconnection still needs everyday validation.
 
 ## License
 
